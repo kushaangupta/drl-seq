@@ -1,4 +1,4 @@
-# drl-sseq
+# drl-seq
 
 ### Setup
 
