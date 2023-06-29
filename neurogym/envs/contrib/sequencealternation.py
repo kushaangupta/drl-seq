@@ -32,7 +32,9 @@ class SequenceAlternation(ngym.TrialEnv):
         dt=100,
         rewards=None,
         timing=None,
+        num_zones=8,
         sequence_length=8,
+        cued_epoch_periodicity=3,
         element_space=None,
         render_mode=None,
     ):
@@ -43,9 +45,11 @@ class SequenceAlternation(ngym.TrialEnv):
                 + " timing variable."
             )
 
-        nzones = 8
-        self.sequence_length = sequence_length  # expects even
-        self.element_space = element_space or spaces.Discrete(nzones)
+        self.num_zones = num_zones
+        self.num_epoch = 0
+        self.sequence_length = sequence_length  # expects even number
+        self.cued_epoch_periodicity = cued_epoch_periodicity
+        self.element_space = element_space or spaces.Discrete(num_zones)
 
         # Rewards
         self.rewards = {"correct": +1.0, "fail": 0.0}
@@ -53,9 +57,10 @@ class SequenceAlternation(ngym.TrialEnv):
             self.rewards.update(rewards)
 
         self.action_space = self.element_space
-        self.observation_space = spaces.MultiBinary(n=nzones)
+        self.observation_space = spaces.MultiBinary(n=num_zones)
 
         self.sequence = self._generate_sequence()
+        self.ob = np.zeros((1, self.element_space.n), dtype=np.bool)
 
         self.render_mode = render_mode
 
@@ -77,17 +82,51 @@ class SequenceAlternation(ngym.TrialEnv):
         )
         return sequence
 
+    def set_groundtruth(self, value, period=None, where=None):
+        """Set groundtruth value."""
+        if not self._gt_built:
+            self._init_gt()
+
+        if where is not None:
+            # TODO: Only works for Discrete action_space, make it work for Box
+            value = self.action_space.name[where][value]
+        if isinstance(period, str):
+            self.gt[self.start_ind[period]: self.end_ind[period]] = value
+        elif period is None:
+            self.gt[:] = value
+        else:
+            for p in period:
+                self.set_groundtruth(value, p)
+
+    def view_groundtruth(self, period):
+        """View observation of an period."""
+        if not self._gt_built:
+            self._init_gt()
+        return self.gt[self.start_ind[period]:self.end_ind[period]]
+
+    def in_period(self, period, t=None):
+        """Check if current time or time t is in period"""
+        if t is None:
+            t = self.t  # Default
+        return self.start_t[period] <= t < self.end_t[period]
+
+    @property
+    def gt_now(self):
+        return self.gt[self.t_ind]
+
     def _new_trial(self, **kwargs):
         # ---------------------------------------------------------------------
         # Trial (trials are variable number of steps long)
         # ---------------------------------------------------------------------
         # determine the transitions
         self.seq_step = self.current_step = self.cumulative_reward = 0
-        trial = dict(seq_step=self.seq_step, current_step=self.current_step)
         ground_truth = self.sequence[self.seq_step]
+        trial = dict(seq_step=self.seq_step, current_step=self.current_step,
+                     ground_truth=ground_truth)
 
-        self.ob = np.zeros((1, self.element_space.n), dtype=np.bool)
-        self.ob[0, ground_truth] = True  # cue light on
+
+        if (self.num_epoch / self.cued_epoch_periodicity) % 2 == 0:
+            self.ob[0, ground_truth] = True  # cue light on
 
         self.gt = ground_truth
 
@@ -97,6 +136,8 @@ class SequenceAlternation(ngym.TrialEnv):
             "cumulative_reward": self.cumulative_reward,
             "performance": self.performance,
         }
+
+        self.set_groundtruth(ground_truth)
 
         return trial, info
 
@@ -110,12 +151,15 @@ class SequenceAlternation(ngym.TrialEnv):
         if action == ground_truth:
             reward = self.rewards["correct"]
             self.cumulative_reward += 1
-            self.performance = self.cumulative_reward / self.current_step
             obs[action] = False  # cue light off
             trial["seq_step"] += 1
-            obs[self.sequence[trial["seq_step"] % self.sequence_length]] = True  # next cue light on
+            # if trial ended, next cue light on will be handled in _new_trial()
+            if trial["seq_step"] == self.sequence_length: self.num_epoch += 1
+            if (self.num_epoch / self.cued_epoch_periodicity) % 2 == 0:
+                obs[self.sequence[trial["seq_step"] % self.sequence_length]] = True  # next cue light on
 
         self.current_step += 1
+        self.performance = self.cumulative_reward / self.current_step
         done = trial["seq_step"] > self.sequence_length
 
         info = {
