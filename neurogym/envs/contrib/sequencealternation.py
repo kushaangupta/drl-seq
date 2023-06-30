@@ -66,7 +66,7 @@ class SequenceAlternation(ngym.TrialEnv):
         self.observation_space = spaces.MultiBinary(n=num_zones)
 
         self.sequence = self._generate_sequence()
-        self.ob = np.zeros((1, self.element_space.n), dtype=np.bool)
+        self.ob = np.zeros((1, self.element_space.n), dtype=bool)
 
         self.render_mode = render_mode
 
@@ -130,7 +130,7 @@ class SequenceAlternation(ngym.TrialEnv):
         trial = dict(seq_step=self.seq_step, current_step=self.current_step,
                      ground_truth=ground_truth)
 
-        if (self.num_epoch / self.cued_epoch_periodicity) % 2 == 0:
+        if (self.num_epoch / self.cued_epoch_periodicity) % 2 < 1:
             self.ob[0, ground_truth] = True  # cue light on
 
         self.gt = ground_truth
@@ -151,7 +151,7 @@ class SequenceAlternation(ngym.TrialEnv):
         obs = self.ob[0]
         reward = self.rewards["fail"]
 
-        seq_step_cyc = trial["seq_step"] % self.sequence_length
+        seq_step_cyc = self.seq_step % self.sequence_length
         ground_truth = self.sequence[seq_step_cyc]
         if action == ground_truth:
             # deliver reward per the reward_probs
@@ -161,20 +161,20 @@ class SequenceAlternation(ngym.TrialEnv):
                 reward = self.rewards["correct"]
             self.cumulative_reward += 1
             obs[action] = False  # cue light off
-            trial["seq_step"] += 1
+            self.seq_step += 1  # next sequence step
             # if trial ended, next cue light on will be handled in _new_trial()
-            if trial["seq_step"] == self.sequence_length: self.num_epoch += 1
+            if self.seq_step == self.sequence_length: self.num_epoch += 1
             if (
-                (self.num_epoch / self.cued_epoch_periodicity) % 2 == 0
-                and trial["seq_step"] < self.sequence_length  # if returning to start, then _new_trial() will handle
+                (self.num_epoch / self.cued_epoch_periodicity) % 2 < 1
+                and self.seq_step < self.sequence_length  # if returning to start, then _new_trial() will handle
             ):
-                obs[self.sequence[trial["seq_step"] % self.sequence_length]] = True  # next cue light on
+                obs[self.sequence[self.seq_step % self.sequence_length]] = True  # next cue light on
             if obs.sum() > 1:
                 print("Warning: more than one cue light on")
 
         self.current_step += 1
         self.performance = self.cumulative_reward / self.current_step
-        done = trial["seq_step"] > self.sequence_length
+        done = self.seq_step == self.sequence_length
 
         info = dict(
             new_trial=done,
@@ -183,7 +183,9 @@ class SequenceAlternation(ngym.TrialEnv):
             performance=self.performance,
         )
 
+        trial["seq_step"] = self.seq_step
         trial["current_step"] = self.current_step
+        trial["ground_truth"] = ground_truth
 
         return obs, reward, done, False, info
 
