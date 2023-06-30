@@ -35,6 +35,7 @@ class SequenceAlternation(ngym.TrialEnv):
         num_zones=8,
         sequence_length=8,
         cued_epoch_periodicity=3,
+        reward_probs=None,
         element_space=None,
         render_mode=None,
     ):
@@ -52,9 +53,14 @@ class SequenceAlternation(ngym.TrialEnv):
         self.element_space = element_space or spaces.Discrete(num_zones)
 
         # Rewards
-        self.rewards = {"correct": +1.0, "fail": 0.0}
+        self.rewards = dict(correct=1., fail=.0)
         if rewards:
             self.rewards.update(rewards)
+        if reward_probs is None:
+            reward_probs = [1. for _ in range(self.sequence_length)]
+        else:
+            assert len(reward_probs) == self.sequence_length
+        self.reward_probs = reward_probs
 
         self.action_space = self.element_space
         self.observation_space = spaces.MultiBinary(n=num_zones)
@@ -124,18 +130,17 @@ class SequenceAlternation(ngym.TrialEnv):
         trial = dict(seq_step=self.seq_step, current_step=self.current_step,
                      ground_truth=ground_truth)
 
-
         if (self.num_epoch / self.cued_epoch_periodicity) % 2 == 0:
             self.ob[0, ground_truth] = True  # cue light on
 
         self.gt = ground_truth
 
-        info = {
-            "new_trial": False,
-            "gt": ground_truth,
-            "cumulative_reward": self.cumulative_reward,
-            "performance": self.performance,
-        }
+        info = dict(
+            new_trial=False,
+            gt=ground_truth,
+            cumulative_reward=self.cumulative_reward,
+            performance=self.performance,
+        )
 
         self.set_groundtruth(ground_truth)
 
@@ -149,25 +154,34 @@ class SequenceAlternation(ngym.TrialEnv):
         seq_step_cyc = trial["seq_step"] % self.sequence_length
         ground_truth = self.sequence[seq_step_cyc]
         if action == ground_truth:
-            reward = self.rewards["correct"]
+            # deliver reward per the reward_probs
+            if self.reward_probs[seq_step_cyc] == 1:
+                reward = self.rewards["correct"]
+            elif np.random.rand() < self.reward_probs[seq_step_cyc]:
+                reward = self.rewards["correct"]
             self.cumulative_reward += 1
             obs[action] = False  # cue light off
             trial["seq_step"] += 1
             # if trial ended, next cue light on will be handled in _new_trial()
             if trial["seq_step"] == self.sequence_length: self.num_epoch += 1
-            if (self.num_epoch / self.cued_epoch_periodicity) % 2 == 0:
+            if (
+                (self.num_epoch / self.cued_epoch_periodicity) % 2 == 0
+                and trial["seq_step"] < self.sequence_length  # if returning to start, then _new_trial() will handle
+            ):
                 obs[self.sequence[trial["seq_step"] % self.sequence_length]] = True  # next cue light on
+            if obs.sum() > 1:
+                print("Warning: more than one cue light on")
 
         self.current_step += 1
         self.performance = self.cumulative_reward / self.current_step
         done = trial["seq_step"] > self.sequence_length
 
-        info = {
-            "new_trial": done,
-            "gt": ground_truth,
-            "cumulative_reward": self.cumulative_reward,
-            "performance": self.performance,
-        }
+        info = dict(
+            new_trial=done,
+            gt=ground_truth,
+            cumulative_reward=self.cumulative_reward,
+            performance=self.performance,
+        )
 
         trial["current_step"] = self.current_step
 
