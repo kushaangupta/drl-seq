@@ -6,6 +6,14 @@ from gymnasium import spaces
 import neurogym as ngym
 
 
+def generate_sequence(num_range, sequence_length):
+    numel = sequence_length // 2 + 1
+    sequence = np.random.choice(num_range, size=numel, replace=False)
+    sequence = np.insert(
+        sequence, -1, values=sequence[: sequence_length - numel]
+    )
+    return sequence
+
 class SequenceAlternation(ngym.TrialEnv):
     """Sequence alternation matching task.
 
@@ -81,11 +89,7 @@ class SequenceAlternation(ngym.TrialEnv):
         self.clock = None
 
     def _generate_sequence(self):
-        numel = self.sequence_length // 2 + 1
-        sequence = np.random.choice(self.element_space.n, size=numel, replace=False)
-        sequence = np.insert(
-            sequence, -1, values=sequence[: self.sequence_length - numel]
-        )
+        sequence = generate_sequence(self.element_space.n, self.sequence_length)
         return sequence
 
     def set_groundtruth(self, value, period=None, where=None):
