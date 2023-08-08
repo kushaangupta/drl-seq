@@ -96,7 +96,9 @@ class PerceptualDecisionMaking(ngym.TrialEnv):
         # Ground truth
         self.set_groundtruth(ground_truth, period='decision', where='choice')
 
-        return trial
+        info = {'new_trial': False, 'gt': self.gt_now}
+
+        return trial, info
 
     def _step(self, action):
         """
@@ -126,7 +128,7 @@ class PerceptualDecisionMaking(ngym.TrialEnv):
                 else:
                     reward += self.rewards['fail']
 
-        return self.ob_now, reward, False, {'new_trial': new_trial, 'gt': gt}
+        return self.ob_now, reward, False, False, {'new_trial': new_trial, 'gt': gt}
 
 
 #  TODO: there should be a timeout of 1000ms for incorrect trials
