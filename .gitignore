@@ -111,3 +111,8 @@ figures/
 docs/source/envs/images/
 docs/source/_static/
 .DS_Store
+
+# custom files
+*/cache
+*/log_dir
+*/data

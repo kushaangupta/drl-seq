@@ -1,4 +1,7 @@
 gymnasium
+scikit-learn
+torch
 stable-baselines3
 shimmy
 ipykernel
+lightning
